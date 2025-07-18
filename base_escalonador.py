@@ -10,7 +10,7 @@ import math
 # Este código fornece a base para que vocês experimentem e implementem suas próprias ideias de escalonamento, mantendo a estrutura flexível e fácil de estender.
 
 class TarefaCAV:
-    def __init__(self, nome, duracao, tempo_chegada, possivelmente_catastrofico, prioridade=1):
+    def __init__(self, nome, duracao, tempo_chegada, possivelmente_catastrofico = False, prioridade=1, deadline=None):
         self.nome = nome            # Nome da tarefa (ex. Detecção de Obstáculo)
         self.duracao = duracao      # Tempo necessário para completar a tarefa (em segundos)
         self.prioridade = prioridade # Prioridade da tarefa (quanto menor o número, maior a prioridade)
@@ -22,6 +22,7 @@ class TarefaCAV:
         self.tempo_de_resposta = None # Tempo desde a chegada até a primeira execução
         self.tempo_inicio_execucao_atual = None   # Hora em que a tarefa começa a execução no tempo atual
         self.tempo_final_execucao_atual = None    # Hora em que a tarefa termina a execução no tempo atual
+        self.deadline = deadline
         self.possivelmente_catastrofico = possivelmente_catastrofico # Define se a não-realização da tarefa é possivelmente catastrófica
 
     def __str__(self):
