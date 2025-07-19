@@ -39,7 +39,6 @@ class TarefaCAV:
 # e um tempo restante (tempo_restante), que é decrementado conforme o processo vai sendo executado.
 # O método executar(quantum) executa o processo por uma quantidade limitada de tempo (quantum) ou até ele terminar.
 
-
 # Classe abstrata de Escalonador
 class EscalonadorCAV(ABC):
     def __init__(self):
@@ -73,7 +72,6 @@ class EscalonadorCAV(ABC):
 # A classe base Escalonador define a estrutura para os escalonadores, incluindo um método escalonar
 # que vocês deverão implementar em suas versões específicas de escalonamento (como FIFO e Round Robin).
 
-
 class EscalonadorFIFO(EscalonadorCAV):
     def escalonar(self):
         """Escalonamento FIFO para veículos autônomos"""
@@ -104,6 +102,41 @@ class EscalonadorFIFO(EscalonadorCAV):
 
 # O escalonador FIFO executa os processos na ordem em que foram adicionados, sem interrupção, até que todos os processos terminem.
 
+class EscalonadorSJF(EscalonadorCAV):
+
+    def escalonar(self):
+        self.tarefas.sort(key=lambda tarefa: tarefa.tempo_chegada)
+        fila = deque(self.tarefas)
+
+        if (len(self.tarefas) > 0):
+            self.tempo_atual = self.tarefas[0].tempo_chegada
+
+            while fila: 
+                tarefas_que_chegaram = [tarefa for tarefa in fila if tarefa.tempo_chegada <= self.tempo_atual]
+                tarefas_que_chegaram.sort(key=lambda tarefa: tarefa.duracao)
+                if len(tarefas_que_chegaram) > 0: 
+                    tarefa = tarefas_que_chegaram[0]
+                    fila.remove(tarefa)
+
+                tarefa.tempo_inicio = max(self.tempo_atual, tarefa.tempo_chegada)
+                tarefa.tempo_inicio_execucao_atual = tarefa.tempo_inicio
+                
+                self.tempo_atual = tarefa.tempo_inicio
+                print(
+                    f"[{self.tempo_atual}s] Executando tarefa {tarefa.nome} de {tarefa.duracao} segundos. (chegada: {tarefa.tempo_chegada}s e deadline: {tarefa.deadline})")
+                time.sleep(tarefa.duracao / 10)  # Simula a execução da tarefa 10x mais rápido
+                self.tempo_atual += tarefa.duracao
+                
+                tarefa.tempo_final_execucao_atual = self.tempo_atual
+                tarefa.tempos_execucao.append((tarefa.tempo_inicio_execucao_atual, tarefa.tempo_final_execucao_atual))
+                tarefa.tempo_final = self.tempo_atual
+                tarefa.tempo_em_espera = tarefa.tempo_inicio - tarefa.tempo_chegada
+                tarefa.tempo_de_resposta = tarefa.tempo_em_espera
+                # Registrando a sobrecarga, como exemplo, podemos adicionar um tempo fixo de sobrecarga
+                #self.registrar_sobrecarga(0.5)  # 0.5 segundos de sobrecarga por tarefa (simulando troca de contexto)
+                print(f"[{self.tempo_atual}s] Tarefa {tarefa.nome} finalizada.\nBursts: {tarefa.tempos_execucao}")
+
+        self.exibir_sobrecarga()
 
 class EscalonadorRoundRobin(EscalonadorCAV):
     def __init__(self, quantum):
@@ -176,8 +209,77 @@ class EscalonadorRoundRobin(EscalonadorCAV):
 # Quando o processo termina ou o quantum é atingido, o próximo processo da fila é executado.
 # Se o processo não terminar no quantum, ele é colocado de volta na fila.
 
+class EscalonadorEDF(EscalonadorCAV):
+    def __init__(self, quantum):
+        super().__init__()
+        self.quantum = quantum
 
-class EscalonadorPrioridade(EscalonadorCAV):
+    def escalonar(self):
+        self.tarefas.sort(key=lambda tarefa: tarefa.tempo_chegada)
+        fila = deque(self.tarefas)
+        
+        if (len(self.tarefas) > 0):
+            self.tempo_atual = self.tarefas[0].tempo_chegada
+            
+            while fila:
+                tarefas_que_chegaram = [tarefa for tarefa in fila if tarefa.tempo_chegada <= self.tempo_atual]
+                if (len(tarefas_que_chegaram) == 0):
+                    self.tempo_atual = math.ceil(self.tempo_atual + 1)
+                    continue
+                
+                tarefas_que_chegaram.sort(key=lambda tarefa: tarefa.deadline)
+
+                if len(tarefas_que_chegaram) > 0: 
+                    tarefa = tarefas_que_chegaram[0]
+                    fila.remove(tarefa)
+
+                if tarefa.tempo_restante > 0:
+                    tarefa.tempo_inicio_execucao_atual = max(self.tempo_atual, tarefa.tempo_chegada)
+                    
+                    tarefa.tempo_inicio = tarefa.tempo_inicio_execucao_atual if tarefa.tempo_inicio is None else tarefa.tempo_inicio
+                    tempo_exec = min(tarefa.tempo_restante, self.quantum)
+                    
+                    tarefa.tempo_em_espera += tarefa.tempo_inicio_execucao_atual - (tarefa.tempo_final_execucao_atual if tarefa.tempo_final_execucao_atual is not None else 0)
+                    
+                    print(
+                        f"[{self.tempo_atual}s] Executando tarefa {tarefa.nome} de {tarefa.duracao} segundos por {tempo_exec} segundos. (chegada: {tarefa.tempo_chegada}s) e deadline: {tarefa.deadline}")
+                    
+                    time.sleep(tempo_exec / 10)  # Simula a execução da tarefa 10x mais rapida
+                    
+                    
+                    
+                    self.tempo_atual = tarefa.tempo_inicio_execucao_atual + tempo_exec
+                    tarefa.tempo_final_execucao_atual = self.tempo_atual
+                    tarefa.tempos_execucao.append((tarefa.tempo_inicio_execucao_atual, tarefa.tempo_final_execucao_atual))
+                    tarefa.tempo_restante -= tempo_exec
+                    
+                    tarefa.tempo_de_resposta = tarefa.tempo_inicio - tarefa.tempo_chegada
+                    
+                    
+                    
+                    if tarefa.tempo_restante > 0:
+                        # Registrando a sobrecarga, como exemplo, podemos adicionar um tempo fixo de sobrecarga
+                        self.registrar_sobrecarga(0.3)  # 0.3 segundos de sobrecarga por tarefa
+                        self.tempo_atual += 0.3
+                        
+                        if (fila):
+                            for i in range(len(fila)):
+                                if (fila[i].tempo_chegada > self.tempo_atual):
+                                    fila.insert(i, tarefa)
+                                    break
+                                if (i == len(fila) - 1):
+                                    fila.append(tarefa)
+                        else:
+                            fila.append(tarefa)
+                        
+                        print(f"[{self.tempo_atual}s] Tarefa {tarefa.nome} ainda pendente.\n")
+                    else: 
+                        tarefa.tempo_final = self.tempo_atual
+                        print(f"[{self.tempo_atual}s] Tarefa {tarefa.nome} finalizada.\nBursts: {tarefa.tempos_execucao}\n")
+
+        self.exibir_sobrecarga()
+
+class EscalonadorPrioridadeNP(EscalonadorCAV):
     def escalonar(self):
         """Escalonamento por Prioridade (menor número = maior prioridade)"""
         print("Escalonamento por Prioridade:")
@@ -217,6 +319,77 @@ class EscalonadorPrioridade(EscalonadorCAV):
 
         self.exibir_sobrecarga()
 
+class EscalonadorPrioridadeP(EscalonadorCAV):
+    def __init__(self, quantum):
+        super().__init__()
+        self.quantum = quantum
+
+    def escalonar(self):
+        """Escalonamento por prioridade preemptivo com tarefas de CAVs"""
+        self.tarefas.sort(key=lambda tarefa: tarefa.tempo_chegada)
+        fila = deque(self.tarefas)
+        
+        if (len(self.tarefas) > 0):
+            self.tempo_atual = self.tarefas[0].tempo_chegada
+            
+            while fila:
+                tarefas_que_chegaram = [tarefa for tarefa in fila if tarefa.tempo_chegada <= self.tempo_atual]
+                if (len(tarefas_que_chegaram) == 0):
+                    self.tempo_atual = math.ceil(self.tempo_atual + 1)
+                    continue
+                
+                tarefas_que_chegaram.sort(key=lambda tarefas: tarefas.prioridade)
+
+                if len(tarefas_que_chegaram) > 0: 
+                    tarefa = tarefas_que_chegaram[len(tarefas_que_chegaram)-1]
+                    fila.remove(tarefa)
+
+                if tarefa.tempo_restante > 0:
+                    tarefa.tempo_inicio_execucao_atual = max(self.tempo_atual, tarefa.tempo_chegada)
+                    
+                    tarefa.tempo_inicio = tarefa.tempo_inicio_execucao_atual if tarefa.tempo_inicio is None else tarefa.tempo_inicio
+                    tempo_exec = min(tarefa.tempo_restante, self.quantum)
+                    
+                    tarefa.tempo_em_espera += tarefa.tempo_inicio_execucao_atual - (tarefa.tempo_final_execucao_atual if tarefa.tempo_final_execucao_atual is not None else 0)
+                    
+                    print(
+                        f"[{self.tempo_atual}s] Executando tarefa {tarefa.nome} de {tarefa.duracao} segundos por {tempo_exec} segundos. (chegada: {tarefa.tempo_chegada}s e prioridade: {tarefa.prioridade})")
+                    
+                    time.sleep(tempo_exec / 10)  # Simula a execução da tarefa 10x mais rapida
+                    
+                    
+                    
+                    self.tempo_atual = tarefa.tempo_inicio_execucao_atual + tempo_exec
+                    tarefa.tempo_final_execucao_atual = self.tempo_atual
+                    tarefa.tempos_execucao.append((tarefa.tempo_inicio_execucao_atual, tarefa.tempo_final_execucao_atual))
+                    tarefa.tempo_restante -= tempo_exec
+                    
+                    tarefa.tempo_de_resposta = tarefa.tempo_inicio - tarefa.tempo_chegada
+                    
+                    
+                    
+                    if tarefa.tempo_restante > 0:
+                        # Registrando a sobrecarga, como exemplo, podemos adicionar um tempo fixo de sobrecarga
+                        self.registrar_sobrecarga(0.3)  # 0.3 segundos de sobrecarga por tarefa
+                        self.tempo_atual += 0.3
+                        
+                        if (fila):
+                            for i in range(len(fila)):
+                                if (fila[i].tempo_chegada > self.tempo_atual):
+                                    fila.insert(i, tarefa)
+                                    break
+                                if (i == len(fila) - 1):
+                                    fila.append(tarefa)
+                        else:
+                            fila.append(tarefa)
+                        
+                        print(f"[{self.tempo_atual}s] Tarefa {tarefa.nome} ainda pendente.\n")
+                    else: 
+                        tarefa.tempo_final = self.tempo_atual
+                        print(f"[{self.tempo_atual}s] Tarefa {tarefa.nome} finalizada.\nBursts: {tarefa.tempos_execucao}\n")
+
+        self.exibir_sobrecarga()
+
 class CAV:
     def __init__(self, id):
         self.id = id  # Identificador único para cada CAV
@@ -230,33 +403,31 @@ class CAV:
         escalonador.escalonar()
         print(f"CAV {self.id} terminou todas as suas tarefas.\n")
 
-
 # Função para criar algumas tarefas fictícias
 def criar_tarefas():
     tarefas = [
-        TarefaCAV("Detecção de Obstáculo", random.randint(5, 10), prioridade=1, tempo_chegada=5, possivelmente_catastrofico=True),
-        TarefaCAV("Planejamento de Rota", random.randint(3, 6), prioridade=2, tempo_chegada=1, possivelmente_catastrofico=False),
-        TarefaCAV("Manutenção de Velocidade", random.randint(2, 5), prioridade=3, tempo_chegada=30, possivelmente_catastrofico=False),
-        TarefaCAV("Comunicando com Infraestrutura", random.randint(4, 7), prioridade=1, tempo_chegada=20, possivelmente_catastrofico=False),
-        TarefaCAV("Aumento de Velocidade", random.randint(2, 5), prioridade=3, tempo_chegada=1, possivelmente_catastrofico=False),
-        TarefaCAV("Aumentar volume do rádio", random.randint(1, 2), prioridade=5, tempo_chegada=2, possivelmente_catastrofico=False),
-        TarefaCAV("Comunicação de SOS", random.randint(10, 15), prioridade=1, tempo_chegada=22, possivelmente_catastrofico=True),
-        TarefaCAV("Reconhecimento de Sinais de Trânsito", random.randint(3, 6), prioridade=2, tempo_chegada=8, possivelmente_catastrofico=False),
-        TarefaCAV("Monitoramento de Ponto Cego", random.randint(4, 8), prioridade=2, tempo_chegada=12, possivelmente_catastrofico=True),
-        TarefaCAV("Análise de Condições Climáticas", random.randint(2, 5), prioridade=3, tempo_chegada=15, possivelmente_catastrofico=False),
-        TarefaCAV("Atualização de Mapas", random.randint(5, 9), prioridade=4, tempo_chegada=50, possivelmente_catastrofico=False),
-        # TarefaCAV("Detecção de Faixa de Rodagem", random.randint(3, 6), prioridade=2, tempo_chegada=9, possivelmente_catastrofico=False),
-        # TarefaCAV("Verificação de Sistemas Internos", random.randint(2, 4), prioridade=4, tempo_chegada=25, possivelmente_catastrofico=False),
-        # TarefaCAV("Ajuste de Suspensão", random.randint(2, 3), prioridade=5, tempo_chegada=35, possivelmente_catastrofico=False),
-        TarefaCAV("Resfriamento de Bateria", random.randint(3, 6), prioridade=3, tempo_chegada=20, possivelmente_catastrofico=False),
-        # TarefaCAV("Manobra de Ultrapassagem", random.randint(6, 10), prioridade=1, tempo_chegada=11, possivelmente_catastrofico=True),
-        # TarefaCAV("Redução de Velocidade", random.randint(2, 4), prioridade=2, tempo_chegada=3, possivelmente_catastrofico=False),
-        TarefaCAV("Recarregamento por Indução", random.randint(5, 7), prioridade=4, tempo_chegada=90, possivelmente_catastrofico=False),
-        # TarefaCAV("Monitoramento de Passageiros", random.randint(1, 2), prioridade=5, tempo_chegada=6, possivelmente_catastrofico=False),
-        # TarefaCAV("Envio de Diagnóstico Remoto", random.randint(3, 6), prioridade=4, tempo_chegada=27, possivelmente_catastrofico=False),
+        TarefaCAV("Detecção de Obstáculo", random.randint(5, 10), prioridade=1, tempo_chegada=5, possivelmente_catastrofico=True, deadline=5),
+        TarefaCAV("Planejamento de Rota", random.randint(3, 6), prioridade=2, tempo_chegada=5, possivelmente_catastrofico=False, deadline=3),
+        TarefaCAV("Manutenção de Velocidade", random.randint(2, 5), prioridade=3, tempo_chegada=30, possivelmente_catastrofico=False, deadline=1),
+        #TarefaCAV("Comunicando com Infraestrutura", random.randint(4, 7), prioridade=1, tempo_chegada=20, possivelmente_catastrofico=False, deadline=20),
+        #TarefaCAV("Aumento de Velocidade", random.randint(2, 5), prioridade=3, tempo_chegada=1, possivelmente_catastrofico=False, deadline=13),
+        #TarefaCAV("Aumentar volume do rádio", random.randint(1, 2), prioridade=5, tempo_chegada=2, possivelmente_catastrofico=False, deadline=55),
+        #TarefaCAV("Comunicação de SOS", random.randint(10, 15), prioridade=1, tempo_chegada=22, possivelmente_catastrofico=True, deadline=90),
+        #TarefaCAV("Reconhecimento de Sinais de Trânsito", random.randint(3, 6), prioridade=2, tempo_chegada=8, possivelmente_catastrofico=False, deadline=8),
+        #TarefaCAV("Monitoramento de Ponto Cego", random.randint(4, 8), prioridade=2, tempo_chegada=12, possivelmente_catastrofico=True, deadline=27),
+        #TarefaCAV("Análise de Condições Climáticas", random.randint(2, 5), prioridade=3, tempo_chegada=15, possivelmente_catastrofico=False, deadline=666),
+        #TarefaCAV("Atualização de Mapas", random.randint(5, 9), prioridade=4, tempo_chegada=50, possivelmente_catastrofico=False, deadline=157),
+        #TarefaCAV("Detecção de Faixa de Rodagem", random.randint(3, 6), prioridade=2, tempo_chegada=9, possivelmente_catastrofico=False),
+        #TarefaCAV("Verificação de Sistemas Internos", random.randint(2, 4), prioridade=4, tempo_chegada=25, possivelmente_catastrofico=False),
+        #TarefaCAV("Ajuste de Suspensão", random.randint(2, 3), prioridade=5, tempo_chegada=35, possivelmente_catastrofico=False),
+        #TarefaCAV("Resfriamento de Bateria", random.randint(3, 6), prioridade=3, tempo_chegada=20, possivelmente_catastrofico=False, deadline=0),
+        #TarefaCAV("Manobra de Ultrapassagem", random.randint(6, 10), prioridade=1, tempo_chegada=11, possivelmente_catastrofico=True),
+        #TarefaCAV("Redução de Velocidade", random.randint(2, 4), prioridade=2, tempo_chegada=3, possivelmente_catastrofico=False),
+        #TarefaCAV("Recarregamento por Indução", random.randint(5, 7), prioridade=4, tempo_chegada=90, possivelmente_catastrofico=False, deadline=22),
+        #TarefaCAV("Monitoramento de Passageiros", random.randint(1, 2), prioridade=5, tempo_chegada=6, possivelmente_catastrofico=False),
+        #TarefaCAV("Envio de Diagnóstico Remoto", random.randint(3, 6), prioridade=4, tempo_chegada=27, possivelmente_catastrofico=False),
     ]
     return tarefas
-
 
 # Exemplo de uso
 if __name__ == "__main__":
@@ -268,8 +439,33 @@ if __name__ == "__main__":
     for t in tarefas:
         cav.adicionar_tarefa(t)
 
+
+    """print("Simulando CAV com Prioridade P:\n")
+    escalonador_p = EscalonadorPrioridadeP(2)
+    for t in tarefas:
+        escalonador_p.adicionar_tarefa(t)
+
+    simulador_p = CAV(id=1)
+    simulador_p.executar_tarefas(escalonador_p)
+
+    print("Simulando CAV com EDF:\n")
+    escalonador_EDF = EscalonadorEDF(2)
+    for t in tarefas:
+        escalonador_EDF.adicionar_tarefa(t)
+
+    simulador_EDF = CAV(id=1)
+    simulador_EDF.executar_tarefas(escalonador_EDF)"""
+
+    print("Simulando CAV com SJF:\n")
+    escalonador_SJF = EscalonadorSJF()
+    for t in tarefas:
+        escalonador_SJF.adicionar_tarefa(t)
+
+    simulador_SJF = CAV(id=1)
+    simulador_SJF.executar_tarefas(escalonador_SJF)
+
     # Criar um escalonador FIFO
-    print("Simulando CAV com FIFO:\n")
+    """print("Simulando CAV com FIFO:\n")
     escalonador_fifo = EscalonadorFIFO()
     for t in tarefas:
         escalonador_fifo.adicionar_tarefa(t)
@@ -292,9 +488,9 @@ if __name__ == "__main__":
 
     # Criar um escalonador por Prioridade
     print("\nSimulando CAV com Escalonamento por Prioridade:\n")
-    escalonador_prio = EscalonadorPrioridade()
+    escalonador_prio = EscalonadorPrioridadeNP()
     for t in tarefas:
         escalonador_prio.adicionar_tarefa(t)
 
     simulador_prio = CAV(id=1)
-    simulador_prio.executar_tarefas(escalonador_prio)
+    simulador_prio.executar_tarefas(escalonador_prio)"""
