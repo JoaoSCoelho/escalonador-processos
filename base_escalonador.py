@@ -68,6 +68,39 @@ class EscalonadorCAV(ABC):
     def exibir_sobrecarga(self):
         """Exibe a sobrecarga total acumulada"""
         print(f"Sobrecarga total acumulada: {self.sobrecarga_total} segundos.\n")
+        
+    def calcular_e_exibir_metricas(self, tarefas):
+        """
+        Calcula e exibe o tempo de turnaround médio e a sobrecarga total
+        para a simulação.
+        """
+        tempos_de_turnaround = []
+        if not tarefas:
+            print("Nenhuma tarefa para calcular métricas.")
+            return
+
+        print("\n--- Resultados da Simulação ---")
+        for tarefa in tarefas:
+            if tarefa.tempo_final != None:  # Calcula apenas para tarefas que foram concluídas
+                turnaround = tarefa.tempo_final - tarefa.tempo_chegada
+                tempos_de_turnaround.append(turnaround)
+                print(f"  - Tarefa '{tarefa.nome}':")
+                print(
+                    f"    - Chegada: {tarefa.tempo_chegada:.2f}s, Conclusão: {tarefa.tempo_final:.2f}s")
+                print(f"    - Tempo de Turnaround: {turnaround:.2f}s")
+            else:
+                print(f"  - Tarefa '{tarefa.nome}' não foi concluída.")
+
+        if tempos_de_turnaround:
+            avg_turnaround = sum(tempos_de_turnaround) / \
+                len(tempos_de_turnaround)
+            print(f"**Turnaround Médio**: {avg_turnaround:.2f} segundos.")
+        else:
+            print("**Turnaround Médio**: N/A (Nenhuma tarefa concluída).")
+
+        print(
+            f"**Sobrecarga Total Acumulada**: {self.sobrecarga_total:.2f} segundos.")
+        print("------------------------------\n")
 
 # A classe base Escalonador define a estrutura para os escalonadores, incluindo um método escalonar
 # que vocês deverão implementar em suas versões específicas de escalonamento (como FIFO e Round Robin).
@@ -470,19 +503,19 @@ class EscalonadorUG(EscalonadorCAV):
 
         self.exibir_sobrecarga()
 
-class EscalonamentoFutureVision(EscalonadorCAV):
+class EscalonadorFutureVision(EscalonadorCAV):
     def __init__(self, quantum):
         super().__init__()
         self.quantum = quantum
 
-    def limite(tarefas_que_chegaram):
-        if len(tarefas_que_chegaram > 0):
+    def limite(self, tarefas_que_chegaram):
+        if (len(tarefas_que_chegaram) > 0):
             duracao_total = 0
             menor_chegada = tarefas_que_chegaram[0].tempo_chegada 
             maior_chegada = tarefas_que_chegaram[0].tempo_chegada
 
             for tarefa in tarefas_que_chegaram: 
-                duracao += tarefa.duracao
+                duracao_total += tarefa.tempo_restante
                 menor_chegada = min(menor_chegada, tarefa.tempo_chegada)
                 maior_chegada = max(maior_chegada, tarefa.tempo_chegada)
 
@@ -506,12 +539,26 @@ class EscalonamentoFutureVision(EscalonadorCAV):
                     self.tempo_atual = math.ceil(self.tempo_atual + 1)
                     continue
                 
-                tarefas_que_chegaram.sort(key=lambda tarefa: tarefa.duracao)
+                tarefas_que_chegaram.sort(key=lambda tarefa: tarefa.tempo_restante)
                 tarefa = tarefas_que_chegaram[0]
-                if self.limite(tarefas_que_chegaram) < tarefa.duracao:
+                tarefa_maior_que_limite = None
+                
+                
+                
+                for t in tarefas_que_chegaram:
+                    tempo_aguardando = self.tempo_atual - t.tempo_final_execucao_atual if (
+                        t.tempo_final_execucao_atual is not None) else self.tempo_atual - t.tempo_chegada
+                    if tempo_aguardando > self.limite(tarefas_que_chegaram):
+                        tarefa_maior_que_limite = t
+                        break
+                if tarefa_maior_que_limite is not None:
+                    tarefa = tarefa_maior_que_limite
+                    
                 fila.remove(tarefa)
 
                 if tarefa.tempo_restante > 0:
+                    tempo_aguardando = self.tempo_atual - tarefa.tempo_final_execucao_atual if (
+                        tarefa.tempo_final_execucao_atual is not None) else (tarefa.tempo_de_resposta if tarefa.tempo_de_resposta is not None else self.tempo_atual - tarefa.tempo_chegada)
                     tarefa.tempo_inicio_execucao_atual = max(self.tempo_atual, tarefa.tempo_chegada)
                     
                     tarefa.tempo_inicio = tarefa.tempo_inicio_execucao_atual if tarefa.tempo_inicio is None else tarefa.tempo_inicio
@@ -520,7 +567,7 @@ class EscalonamentoFutureVision(EscalonadorCAV):
                     tarefa.tempo_em_espera += tarefa.tempo_inicio_execucao_atual - (tarefa.tempo_final_execucao_atual if tarefa.tempo_final_execucao_atual is not None else 0)
                     
                     print(
-                        f"[{self.tempo_atual}s] Executando tarefa {tarefa.nome} de {tarefa.duracao} segundos por {tempo_exec} segundos. (chegada: {tarefa.tempo_chegada}s)")
+                        f"[{self.tempo_atual}s] Executando tarefa {tarefa.nome} de {tarefa.duracao} segundos por {tempo_exec} segundos. (chegada: {tarefa.tempo_chegada}s, limite de espera: {self.limite(tarefas_que_chegaram)}s, tempo_espera: { (tempo_aguardando)}s)")
                     
                     time.sleep(tempo_exec / 10)  # Simula a execução da tarefa 10x mais rapida
                     
@@ -573,12 +620,12 @@ class CAV:
 # Função para criar algumas tarefas fictícias
 def criar_tarefas():
     tarefas = [
-        TarefaCAV("Detecção de Obstáculo", 80, prioridade=4, tempo_chegada=5, possivelmente_catastrofico=True, deadline=89),
-        TarefaCAV("Planejamento de Rota", random.randint(3, 6), prioridade=2, tempo_chegada=5, possivelmente_catastrofico=False, deadline=3),
-        TarefaCAV("Manutenção de Velocidade", random.randint(2, 5), prioridade=3, tempo_chegada=30, possivelmente_catastrofico=False, deadline=1),
-        #TarefaCAV("Comunicando com Infraestrutura", random.randint(4, 7), prioridade=1, tempo_chegada=20, possivelmente_catastrofico=False, deadline=20),
-        #TarefaCAV("Aumento de Velocidade", random.randint(2, 5), prioridade=3, tempo_chegada=1, possivelmente_catastrofico=False, deadline=13),
-        #TarefaCAV("Aumentar volume do rádio", random.randint(1, 2), prioridade=5, tempo_chegada=2, possivelmente_catastrofico=False, deadline=55),
+        TarefaCAV("Detecção de Obstáculo", 10, prioridade=100, tempo_chegada=5, possivelmente_catastrofico=True, deadline=16),
+        TarefaCAV("Planejamento de Rota", 5, prioridade=2, tempo_chegada=5, possivelmente_catastrofico=False, deadline=3),
+        TarefaCAV("Manutenção de Velocidade", 3, prioridade=3, tempo_chegada=30, possivelmente_catastrofico=False, deadline=1),
+        TarefaCAV("Comunicando com Infraestrutura", 20, prioridade=1, tempo_chegada=1, possivelmente_catastrofico=False, deadline=20),
+        TarefaCAV("Aumento de Velocidade", 15, prioridade=3, tempo_chegada=6, possivelmente_catastrofico=False, deadline=13),
+        TarefaCAV("Aumentar volume do rádio", 8, prioridade=5, tempo_chegada=2, possivelmente_catastrofico=False, deadline=55),
         #TarefaCAV("Comunicação de SOS", random.randint(10, 15), prioridade=1, tempo_chegada=22, possivelmente_catastrofico=True, deadline=90),
         #TarefaCAV("Reconhecimento de Sinais de Trânsito", random.randint(3, 6), prioridade=2, tempo_chegada=8, possivelmente_catastrofico=False, deadline=8),
         #TarefaCAV("Monitoramento de Ponto Cego", random.randint(4, 8), prioridade=2, tempo_chegada=12, possivelmente_catastrofico=True, deadline=27),
@@ -607,13 +654,16 @@ if __name__ == "__main__":
         cav.adicionar_tarefa(t)
 
 
-    """print("Simulando CAV com Prioridade P:\n")
+    print("Simulando CAV com Prioridade P:\n")
     escalonador_p = EscalonadorPrioridadeP(2)
     for t in tarefas:
         escalonador_p.adicionar_tarefa(t)
 
     simulador_p = CAV(id=1)
     simulador_p.executar_tarefas(escalonador_p)
+    escalonador_p.calcular_e_exibir_metricas(tarefas)
+
+    tarefas = criar_tarefas()
 
     print("Simulando CAV com EDF:\n")
     escalonador_EDF = EscalonadorEDF(2)
@@ -622,6 +672,9 @@ if __name__ == "__main__":
 
     simulador_EDF = CAV(id=1)
     simulador_EDF.executar_tarefas(escalonador_EDF)
+    escalonador_EDF.calcular_e_exibir_metricas(tarefas)
+
+    tarefas = criar_tarefas()
 
     print("Simulando CAV com SJF:\n")
     escalonador_SJF = EscalonadorSJF()
@@ -630,6 +683,9 @@ if __name__ == "__main__":
 
     simulador_SJF = CAV(id=1)
     simulador_SJF.executar_tarefas(escalonador_SJF)
+    escalonador_SJF.calcular_e_exibir_metricas(tarefas)
+
+    tarefas = criar_tarefas()
 
     # Criar um escalonador FIFO
     print("Simulando CAV com FIFO:\n")
@@ -639,6 +695,7 @@ if __name__ == "__main__":
         
     simulador_fifo = CAV(id=1)
     simulador_fifo.executar_tarefas(escalonador_fifo)
+    escalonador_fifo.calcular_e_exibir_metricas(tarefas)
 
     tarefas = criar_tarefas()
 
@@ -650,6 +707,7 @@ if __name__ == "__main__":
 
     simulador_rr = CAV(id=1)
     simulador_rr.executar_tarefas(escalonador_rr)
+    escalonador_rr.calcular_e_exibir_metricas(tarefas)
 
     tarefas = criar_tarefas()
 
@@ -660,7 +718,10 @@ if __name__ == "__main__":
         escalonador_prio.adicionar_tarefa(t)
 
     simulador_prio = CAV(id=1)
-    simulador_prio.executar_tarefas(escalonador_prio)"""
+    simulador_prio.executar_tarefas(escalonador_prio)
+    escalonador_prio.calcular_e_exibir_metricas(tarefas)
+
+    tarefas = criar_tarefas()
 
     # Criar um escalonador por Último gás
     print("\nSimulando CAV com Escalonamento por Último Gás:\n")
@@ -670,3 +731,15 @@ if __name__ == "__main__":
 
     simulador_ug = CAV(id=1)
     simulador_ug.executar_tarefas(escalonador_ug)
+    escalonador_ug.calcular_e_exibir_metricas(tarefas)
+    
+    tarefas = criar_tarefas()
+    
+    print("\nSimulando CAV com Escalonamento por visão do futuro:\n")
+    escalonador_vf = EscalonadorFutureVision(3)
+    for t in tarefas:
+        escalonador_vf.adicionar_tarefa(t)
+
+    simulador_vf = CAV(id=1)
+    simulador_vf.executar_tarefas(escalonador_vf)
+    escalonador_vf.calcular_e_exibir_metricas(tarefas)
